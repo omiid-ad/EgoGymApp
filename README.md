@@ -1,3 +1,4 @@
+
 # GymEgo (مدیریت باشگاه EGO)
 
 GymEgo is a lightweight, offline desktop application designed specifically for managing gym memberships, attendances, and financial plans. It provides a clean, web-based UI wrapped in a native Windows executable, completely eliminating the need for complex server setups or internet connectivity for the end-user.
@@ -15,7 +16,7 @@ If you are setting this up in VS Code or Cursor, follow these steps to run the p
 
 1.  **Clone the repository:**
     ```bash
-    git clone [https://github.com/omiid-ad/EgoGymApp.git](https://github.com/omiid-ad/EgoGymApp.git)
+    git clone https://github.com/omiid-ad/EgoGymApp.git
     cd gym-ego
     ```
 
@@ -47,8 +48,9 @@ This section contains architectural decisions and quirks to remember for future 
 
 ### 2. PyInstaller & Asset Bundling
 * Because `pywebview` needs to load a local HTML file, standard `--onefile` packaging will fail unless the HTML is bundled into PyInstaller's temporary `sys._MEIPASS` directory.
-* **Build Command:** ```bash
-    pyinstaller --onefile --windowed --add-data "index.html;." --icon=app_icon.ico main.py
+* **Build Command:** 
+* ```bash
+    pyinstaller --noconsole --onefile --icon=icon.ico --add-data "index.html;." main.py
     ```
 * **Assets:** To avoid complex path resolutions for static files during the build, the Vazirmatn font and the favicon are **Base64 encoded** directly inside the `<style>` and `<link>` tags of `index.html`.
 
