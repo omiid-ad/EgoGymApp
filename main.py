@@ -214,6 +214,6 @@ if __name__ == "__main__":
     html_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
 
     webview.create_window(
-        "مدیریت باشگاه بانوان", html_file, js_api=api, width=1050, height=800
+        "نرم افزار مدیریت باشگاه EGO", html_file, js_api=api, width=1050, height=800
     )
     webview.start()
