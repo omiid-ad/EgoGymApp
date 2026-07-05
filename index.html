@@ -176,7 +176,9 @@
     <div><label>کد ملی</label><input id="natCode" placeholder="۰۰۱۲۳۴۵۶۷۸" maxlength="10"></div>
     <div><label>سال تولد</label><input id="birth" placeholder="۱۳۷۵"></div>
     <div><label>شماره تماس اضطراری</label><input id="emg" placeholder="۰۹۱۲۳۴۵۶۷۸۹"></div>
+    <div><label>تاریخ ثبت‌نام</label><input id="regDate" placeholder="۱۴۰۵/۰۴/۱۴"></div>
     <div><label>پلن</label><select id="regPlan"></select></div>
+
     <div><label>یادداشت</label><input id="note" placeholder="مثلاً کمردرد"></div>
   </div>
   <div class="btn-wrap">
@@ -244,6 +246,70 @@ const jTime=ts=>new Date(ts).toLocaleTimeString('fa-IR',{hour:'2-digit',minute:'
 const todayKey=()=>new Date().toISOString().slice(0,10);
 const $=id=>document.getElementById(id);
 
+// --- Jalali (Persian) calendar conversion — pure JS, no external library ---
+function _jdiv(a,b){ return ~~(a/b); }
+function _jmod(a,b){ return a - ~~(a/b)*b; }
+function _jalCal(jy){
+  const breaks=[-61,9,38,199,426,686,756,818,1111,1181,1210,1635,2060,2097,2192,2262,2324,2394,2456,3178];
+  const bl=breaks.length, gy=jy+621;
+  let leapJ=-14, jp=breaks[0], jm, jump, leap, n, i;
+  for(i=1;i<bl;i+=1){ jm=breaks[i]; jump=jm-jp; if(jy<jm) break; leapJ=leapJ+_jdiv(jump,33)*8+_jdiv(_jmod(jump,33),4); jp=jm; }
+  n=jy-jp;
+  leapJ=leapJ+_jdiv(n,33)*8+_jdiv(_jmod(n,33)+3,4);
+  if(_jmod(jump,33)===4 && jump-n===4) leapJ+=1;
+  const leapG=_jdiv(gy,4)-_jdiv((_jdiv(gy,100)+1)*3,4)-150;
+  const march=20+leapJ-leapG;
+  if(jump-n<6) n=n-jump+_jdiv(jump+4,33)*33;
+  leap=_jmod(_jmod(n+1,33)-1,4); if(leap===-1) leap=4;
+  return {leap,gy,march};
+}
+function _g2d(gy,gm,gd){
+  let d=_jdiv((gy+_jdiv(gm-8,6)+100100)*1461,4)+_jdiv(153*_jmod(gm+9,12)+2,5)+gd-34840408;
+  d=d-_jdiv(_jdiv(gy+100100+_jdiv(gm-8,6),100)*3,4)+752;
+  return d;
+}
+function _d2g(jdn){
+  let j=4*jdn+139361631;
+  j=j+_jdiv(_jdiv(4*jdn+183187720,146097)*3,4)*4-3908;
+  const i=_jdiv(_jmod(j,1461),4)*5+308;
+  const gd=_jdiv(_jmod(i,153),5)+1, gm=_jmod(_jdiv(i,153),12)+1, gy=_jdiv(j,1461)-100100+_jdiv(8-gm,6);
+  return {gy,gm,gd};
+}
+function toJalaali(gy,gm,gd){
+  const jdn=_g2d(gy,gm,gd);
+  const gy2=_d2g(jdn).gy; let jy=gy2-621;
+  const r=_jalCal(jy);
+  const jdn1f=_g2d(gy2,3,r.march);
+  let k=jdn-jdn1f, jm, jd;
+  if(k>=0){ if(k<=185){ jm=1+_jdiv(k,31); jd=_jmod(k,31)+1; return {jy,jm,jd}; } else k-=186; }
+  else { jy-=1; k+=179; if(r.leap===1) k+=1; }
+  jm=7+_jdiv(k,30); jd=_jmod(k,30)+1;
+  return {jy,jm,jd};
+}
+function toGregorian(jy,jm,jd){
+  const r=_jalCal(jy);
+  const jdn=_g2d(r.gy,3,r.march)+(jm-1)*31-_jdiv(jm,7)*(jm-7)+jd-1;
+  return _d2g(jdn);
+}
+function jPad(y,m,d){ return String(y).padStart(4,'0')+'/'+String(m).padStart(2,'0')+'/'+String(d).padStart(2,'0'); }
+function jToday(){ const n=new Date(); const j=toJalaali(n.getFullYear(),n.getMonth()+1,n.getDate()); return jPad(j.jy,j.jm,j.jd); }
+function tsToJalaliInput(ts){ if(!ts) return jToday(); const dt=new Date(ts); const j=toJalaali(dt.getFullYear(),dt.getMonth()+1,dt.getDate()); return jPad(j.jy,j.jm,j.jd); }
+function jalaliInputToTs(str){
+  const s=toEn(String(str||'').trim());
+  const m=s.match(/^(\d{3,4})\/(\d{1,2})\/(\d{1,2})$/);
+  if(!m) return null;
+  const jy=+m[1], jm=+m[2], jd=+m[3];
+  if(jm<1||jm>12||jd<1||jd>31) return null;
+  try{
+    const g=toGregorian(jy,jm,jd);
+    const dt=new Date(g.gy,g.gm-1,g.gd,12,0,0,0);
+    if(isNaN(dt.getTime())||dt.getMonth()!==g.gm-1) return null;
+    const back=toJalaali(g.gy,g.gm,g.gd);
+    if(back.jy!==jy||back.jm!==jm||back.jd!==jd) return null; // rejects e.g. day 30 in a 29-day Esfand
+    return dt.getTime();
+  }catch(e){ return null; }
+}
+
 function hashPw(s){ 
   let h1=0xdeadbeef, h2=0x41c6ce57;
   for(let i=0,ch;i<s.length;i++){ ch=s.charCodeAt(i);
@@ -256,6 +322,7 @@ function hashPw(s){
 window.addEventListener('pywebviewready', async function() {
     db = await window.pywebview.api.load_db();
     initLock();
+    $('regDate').value=jToday();
     renderAll();
 });
 
@@ -352,9 +419,12 @@ function saveMember(){
   const dup=db.members.find(m=>m.phone===ph && m.id!=editId);
   if(dup) return showReg(`این شماره قبلاً برای «${dup.fName} ${dup.lName}» با کد ${fa(dup.code)} ثبت شده`,'bad');
 
+  const regTs=jalaliInputToTs($('regDate').value);
+  if(!regTs) return showReg('تاریخ ثبت‌نام نامعتبر است. فرمت صحیح: ۱۴۰۵/۰۴/۱۴','bad');
+
   if(editId){
     const m=db.members.find(x=>x.id==editId);
-    Object.assign(m,{fName:f,lName:l,phone:ph,nationalCode:nc, birth:toEn($('birth').value.trim()),emg:toEn($('emg').value.trim()),note:$('note').value.trim()});
+    Object.assign(m,{fName:f,lName:l,phone:ph,nationalCode:nc, birth:toEn($('birth').value.trim()),emg:toEn($('emg').value.trim()),note:$('note').value.trim(), joinedAt:regTs});
     const pid=+$('regPlan').value;
     if(pid !== (m.planId||0)){
       if(!pid){
@@ -372,7 +442,7 @@ function saveMember(){
 
   const code=String(++db.seq);
   const m={id:Date.now(), code, fName:f, lName:l, phone:ph, nationalCode:nc, birth:toEn($('birth').value.trim()), emg:toEn($('emg').value.trim()),
-    note:$('note').value.trim(), joinedAt:Date.now(), planId:null, sessionsLeft:0, expireAt:null};
+    note:$('note').value.trim(), joinedAt:regTs, planId:null, sessionsLeft:0, expireAt:null};
   db.members.push(m);
   const pid=+$('regPlan').value;
   if(pid) assignPlan(m,pid);
@@ -383,7 +453,7 @@ function showReg(t,c){ const m=$('regMsg'); m.textContent=t; m.className=c;
   m.style.cssText='display:block;max-width:560px;margin:14px auto 0;padding:14px;border-radius:14px;text-align:center';
   renderAll(); }
 function resetForm(){ ['fName','lName','phone','natCode','birth','emg','note','editId'].forEach(i=>$(i).value='');
-  $('regPlan').value=''; $('regTitle').textContent='ثبت‌نام عضو جدید'; }
+  $('regPlan').value=''; $('regDate').value=jToday(); $('regTitle').textContent='ثبت‌نام عضو جدید'; }
 function assignPlan(m,pid){
   const p=db.plans.find(x=>x.id===pid); if(!p) return;
   m.planId=p.id; m.sessionsLeft=(m.sessionsLeft>0?m.sessionsLeft:0)+p.sessions;
@@ -394,6 +464,7 @@ function editMember(id){
   const m=db.members.find(x=>x.id===id);
   $('editId').value=m.id; $('fName').value=m.fName; $('lName').value=m.lName; $('phone').value=m.phone; $('natCode').value=m.nationalCode||'';
   $('birth').value=m.birth||''; $('emg').value=m.emg||''; $('note').value=m.note||'';
+  $('regDate').value=tsToJalaliInput(m.joinedAt);
   $('regTitle').textContent=`ویرایش: ${m.fName} ${m.lName} (کد ${faD(m.code)})`;
   go('register',document.querySelectorAll('nav button')[2]); $('regPlan').value=m.planId||'';
 }
@@ -418,15 +489,16 @@ function renderMembers(){
     if(st){ const a=planStatus(m).active; if(st==='active'&&!a) return false; if(st==='expired'&&a) return false; }
     return true;
   });
-  $('memTable').innerHTML='<tr><th>کد</th><th>نام</th><th>موبایل</th><th>پلن</th><th>جلسات مانده</th><th>اعتبار تا</th><th>وضعیت</th><th></th></tr>'+
+  $('memTable').innerHTML='<tr><th>کد</th><th>نام</th><th>موبایل</th><th>تاریخ ثبت‌نام</th><th>پلن</th><th>جلسات مانده</th><th>اعتبار تا</th><th>وضعیت</th><th></th></tr>'+
    (list.map(m=>{ const {p,active}=planStatus(m);
     return `<tr><td class="code-tag">${faD(m.code)}</td><td>${m.fName} ${m.lName}</td><td>${faD(m.phone)}</td>
+    <td>${m.joinedAt?jDate(m.joinedAt):'—'}</td>
     <td>${p?p.name:'—'}</td><td>${fa(m.sessionsLeft)}</td><td>${m.expireAt?jDate(m.expireAt):'—'}</td>
     <td><span class="badge ${active?'b-ok':'b-err'}">${active?'فعال':'غیرفعال'}</span></td>
     <td><button class="btn sm" onclick="openRenew(${m.id})">تمدید</button>
         <button class="btn sm gray" onclick="editMember(${m.id})">ویرایش</button>
         <button class="btn sm red" onclick="delMember(${m.id})">حذف</button></td></tr>`;}).join('')
-   ||'<tr><td colspan="8" class="muted">عضوی یافت نشد</td></tr>');
+   ||'<tr><td colspan="9" class="muted">عضوی یافت نشد</td></tr>');
 }
 
 function doCheckin(){
