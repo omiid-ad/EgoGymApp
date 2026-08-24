@@ -112,7 +112,7 @@
     <input type="password" id="pwIn" placeholder="رمز عبور" onkeydown="if(event.key==='Enter')unlock()">
     <button class="btn" onclick="unlock()">ورود</button>
     <br><button class="btn sm gray" style="margin-top:14px" onclick="showRecovery()">فراموشی رمز عبور</button>
-    <p style="margin-top: 1rem;" class="muted" id="appVersion">نسخه ۱.۲</p>
+    <p style="margin-top: 1rem;" class="muted" id="appVersion">نسخه ۱.۳</p>
   </div>
 
   <div id="lockRecovery" style="display:none">
@@ -519,33 +519,73 @@ function renderMembers(){
    ||'<tr><td colspan="9" class="muted">عضوی یافت نشد</td></tr>');
 }
 
+let pendingMember=null;
 function doCheckin(){
-  const raw=toEn($('ciCode').value.trim()); $('ciCode').value='';
   const box=$('ciMsg'); box.style.display='block';
+  const raw=toEn($('ciCode').value.trim());
+
+  // Second Enter (input left empty) while a match is awaiting confirmation => confirm it
+  if(pendingMember && !raw){ confirmCheckin(); return; }
+  // Typing a new code while a confirmation is showing cancels the old one
+  if(pendingMember && raw){ pendingMember=null; }
+
+  $('ciCode').value='';
   const m=db.members.find(x=>x.code===raw||x.phone===raw||(x.nationalCode&&x.nationalCode===raw));
   if(!m){ box.className='bad'; box.textContent='❌ عضوی با این کد یافت نشد.'; return; }
-  
-  const today=todayKey();
-  const {p,expired}=planStatus(m);
-  
+
+  const {expired}=planStatus(m);
   if(m.sessionsLeft<=0){ box.className='bad'; box.innerHTML=`⛔ <b>${m.fName} ${m.lName}</b> جلسه‌ای باقی ندارد. لطفاً پلن را تمدید کنید.<br><button class="btn sm" onclick="openRenew(${m.id})">تمدید پلن</button>`; return; }
   if(expired){ box.className='bad'; box.innerHTML=`⛔ اعتبار پلن <b>${m.fName} ${m.lName}</b> در تاریخ ${jDate(m.expireAt)} تمام شده.<br><button class="btn sm" onclick="openRenew(${m.id})">تمدید پلن</button>`; return; }
-  
-  // Decrement session and log attendance
-  m.sessionsLeft--; 
-  db.attendance.push({memberId:m.id,date:today,in:Date.now(),out:null}); 
-  save(); 
+
+  // Show confirmation before touching sessions/attendance — prevents deducting the wrong person
+  pendingMember=m.id;
+  box.className='wrn';
+  box.innerHTML=`❓ ورود برای <b>${m.fName} ${m.lName}</b> (کد ${faD(m.code)}) ثبت شود؟<br>
+    <button class="btn sm" onclick="confirmCheckin()">✅ تایید ورود</button>
+    <button class="btn sm gray" onclick="cancelCheckin()">لغو</button>`;
+  $('ciCode').focus();
+}
+function confirmCheckin(){
+  const box=$('ciMsg');
+  const m=db.members.find(x=>x.id===pendingMember);
+  pendingMember=null;
+  if(!m) return;
+  const {p,expired}=planStatus(m);
+  if(m.sessionsLeft<=0 || expired){ box.className='bad'; box.textContent='⛔ وضعیت عضو تغییر کرده؛ دوباره کد را وارد کنید.'; return; }
+
+  const today=todayKey();
+  m.sessionsLeft--;
+  db.attendance.push({memberId:m.id,date:today,in:Date.now(),out:null});
+  save();
   renderAll();
-  
+
   const low=m.sessionsLeft<=2?`<br>⚠️ فقط ${fa(m.sessionsLeft)} جلسه باقی مانده!`:'';
   box.className=m.sessionsLeft<=2?'wrn':'ok';
   box.innerHTML=`✅ ورود ثبت شد <b>${m.fName} ${m.lName}</b>! (${p?p.name:''})<br>جلسات باقی‌مانده: <b>${fa(m.sessionsLeft)}</b>${low}`;
 }
+function cancelCheckin(){
+  pendingMember=null;
+  const box=$('ciMsg');
+  box.className=''; box.style.display='none'; box.innerHTML='';
+  $('ciCode').focus();
+}
+function undoCheckin(memberId,inTime){
+  if(!confirm('این ورود لغو شود؟ یک جلسه به عضو بازگردانده می‌شود.')) return;
+  const idx=db.attendance.findIndex(a=>a.memberId===memberId && a.in===inTime);
+  if(idx===-1) return alert('این رکورد یافت نشد (شاید قبلاً لغو شده).');
+  db.attendance.splice(idx,1);
+  const m=db.members.find(x=>x.id===memberId);
+  if(m) m.sessionsLeft++;
+  save();
+  renderAll();
+}
 
 function renderToday(){
   const t=todayKey(), rows=db.attendance.filter(a=>a.date===t).sort((a,b)=>b.in-a.in);
-  $('todayList').innerHTML=rows.length?'<table><tr><th>کد</th><th>نام</th><th>ساعت ورود</th></tr>'+
-    rows.map(a=>{const m=db.members.find(x=>x.id===a.memberId); return `<tr><td>${faD(m.code)}</td><td>${m?m.fName+' '+m.lName:'—'}</td><td>${jTime(a.in)}</td></tr>`;}).join('')+'</table>'
+  $('todayList').innerHTML=rows.length?'<table><tr><th>کد</th><th>نام</th><th>ساعت ورود</th><th></th></tr>'+
+    rows.map(a=>{const m=db.members.find(x=>x.id===a.memberId);
+      return `<tr><td>${m?faD(m.code):'—'}</td><td>${m?m.fName+' '+m.lName:'—'}</td><td>${jTime(a.in)}</td>
+        <td><button class="btn sm red" onclick="undoCheckin(${a.memberId},${a.in})">اشتباه بود؟ بازگشت</button></td></tr>`;}).join('')+'</table>'
     :'<p class="muted">هنوز کسی امروز نیامده است.</p>';
 }
 
